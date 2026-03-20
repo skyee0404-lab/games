@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Morning Eagle Flight - Full Screen</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #87CEEB; /* Morning Sky Blue */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            font-family: 'Press Start 2P', cursive;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* Clean Morning UI Design */
+        .ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            transition: opacity 0.3s ease;
+            background: rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(4px);
+        }
+
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .message-box {
+            background-color: #ffffff;
+            border: 4px solid #3498db; 
+            border-radius: 12px;
+            padding: 30px 20px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            color: #2c3e50;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        h1 {
+            font-size: 1.6rem;
+            margin-bottom: 20px;
+            line-height: 1.6;
+            color: #3498db;
+        }
+
+        p {
+            font-size: 0.8rem;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            color: #7f8c8d;
+        }
+
+        .score-board {
+            font-size: 1.1rem;
+            margin: 15px 0;
+            background: #f8fafc;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            color: #334155;
+        }
+
+        .btn {
+            background-color: #f39c12;
+            border: none;
+            padding: 16px 22px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 1.1rem;
+            color: white;
+            cursor: pointer;
+            border-radius: 8px;
+            box-shadow: 0 6px 0 #d35400;
+            margin-top: 12px;
+            transition: transform 0.1s;
+        }
+
+        .btn:active {
+            transform: translateY(6px);
+            box-shadow: 0 0 0 #d35400;
+        }
+
+        /* Clean Score Display */
+        #score-display {
+            position: absolute;
+            top: 50px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 4.5rem;
+            color: white;
+            z-index: 5;
+            -webkit-text-stroke: 3px #2980b9;
+            pointer-events: none;
+            text-shadow: 4px 4px 0 rgba(41, 128, 185, 0.4);
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .pulse { animation: pulse 0.3s; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="score-display">0</div>
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="start-screen" class="ui-layer">
+            <div class="message-box">
+                <h1>MORNING<br>EAGLE FLIGHT</h1>
+                <p>Tap, Click, or<br>Press Space</p>
+                <button class="btn" onclick="startGame()">START FLYING</button>
+            </div>
+        </div>
+
+        <div id="game-over-screen" class="ui-layer hidden">
+            <div class="message-box">
+                <h1 style="color: #e74c3c;">OOPS!</h1>
+                <div class="score-board">
+                    SCORE: <span id="final-score">0</span><br><br>
+                    BEST: <span id="best-score">0</span>
+                </div>
+                <button class="btn" onclick="resetGame()">FLY AGAIN</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const container = document.getElementById("game-container");
+
+        const startScreen = document.getElementById("start-screen");
+        const gameOverScreen = document.getElementById("game-over-screen");
+        const scoreDisplay = document.getElementById("score-display");
+        const finalScoreEl = document.getElementById("final-score");
+        const bestScoreEl = document.getElementById("best-score");
+
+        let frames = 0;
+        let gameState = "START";
+        let score = 0;
+        let bestScore = localStorage.getItem("eagleMorningBest") || 0;
+
+        let scale = 1;
+        const baseWidth = 1000;
+        const baseSpeed = 2.5;
+        let currentSpeed = baseSpeed;
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            scale = canvas.width / baseWidth;
+            ground.y = canvas.height - (120 * scale);
+            bird.x = (window.innerWidth < 600 ? 80 : 150) * scale;
+            
+            // SUPER WIDE VERTICAL GAP
+            pipes.gap = 260 * scale; 
+            pipes.width = 75 * scale;
+        }
+        window.addEventListener('resize', resize);
+
+        const ground = {
+            y: 0,
+            h: 0, 
+            dx: 0, 
+            x: 0,
+            draw: function() {
+                this.h = canvas.height - this.y;
+                // Highway Asphalt
+                ctx.fillStyle = "#576574";
+                ctx.fillRect(0, this.y, canvas.width, this.h);
+
+                // Sidewalk / Edge
+                ctx.fillStyle = "#8395a7";
+                ctx.fillRect(0, this.y, canvas.width, 15 * scale);
+
+                // Highway Yellow Dashed Lines
+                ctx.fillStyle = "#f1c40f";
+                const lineH = 6 * scale;
+                const gap = 100 * scale;
+                for (let i = 0; i < canvas.width / gap + 2; i++) {
+                    ctx.fillRect(this.x + (i * gap), this.y + (50 * scale), 50 * scale, lineH);
+                }
+            },
+            update: function() {
+                if (gameState === "PLAYING") {
+                    this.dx = currentSpeed * scale;
+                    this.x -= this.dx;
+                    if (this.x <= -100 * scale) this.x = 0;
+                }
+            }
+        };
+
+        // CIVILIAN TRAFFIC (Colorful Cars)
+        const traffic = {
+            array: [],
+            colors: ["#e74c3c", "#3498db", "#2ecc71", "#f1c40f", "#9b59b6", "#ffffff", "#e67e22"],
+            draw: function() {
+                for (let c of this.array) {
+                    ctx.save();
+                    ctx.translate(c.x, c.y);
+                    const w = c.width * scale;
+
+                    // Car Body
+                    ctx.fillStyle = c.color;
+                    ctx.beginPath();
+                    ctx.roundRect(0, 5 * scale, w, 12 * scale, 4 * scale);
+                    ctx.fill();
+                    
+                    // Windows (Light Blue)
+                    ctx.fillStyle = "#87cefa";
+                    ctx.fillRect(8 * scale, 2 * scale, w - (18 * scale), 10 * scale);
+                    
+                    // Wheels
+                    ctx.fillStyle = "#2d3436";
+                    const wheelR = 4 * scale;
+                    ctx.beginPath(); ctx.arc(12 * scale, 17 * scale, wheelR, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(w - (12 * scale), 17 * scale, wheelR, 0, Math.PI * 2); ctx.fill();
+                    
+                    ctx.restore();
+                }
+            },
+            update: function() {
+                if (gameState !== "PLAYING") return;
+                
+                // Spawn civilian cars
+                if (frames % Math.floor(80 / scale) === 0 && Math.random() > 0.2) {
+                    let laneOffset = Math.random() > 0.5 ? 25 * scale : 75 * scale;
+                    this.array.push({
+                        x: canvas.width + (50 * scale),
+                        y: ground.y + laneOffset,
+                        width: 50 + Math.random() * 20, // Varying lengths
+                        color: this.colors[Math.floor(Math.random() * this.colors.length)],
+                        speed: (currentSpeed + (Math.random() * 2 + 1)) * scale
+                    });
+                }
+                for (let i = 0; i < this.array.length; i++) {
+                    this.array[i].x -= this.array[i].speed;
+                    if (this.array[i].x + (this.array[i].width * scale) < -50 * scale) {
+                        this.array.splice(i, 1);
+                        i--;
+                    }
+                }
+            }
+        };
+
+        const trails = [];
+
+        // HIGH FIDELITY EAGLE CHARACTER (Same powerful bird, floatier physics)
+        const bird = {
+            x: 0, 
+            y: 250,
+            radius: 12,
+            velocity: 0,
+            gravity: 0.05,  // EXTREMELY FLOATY (Super bagal bumagsak)
+            jumpForce: 3.0, // GENTLE JUMP
+            rotation: 0,
+            
+            draw: function() {
+                // Wind/Feather Trails (Clean white/transparent)
+                for (let t of trails) {
+                    ctx.fillStyle = t.color;
+                    ctx.beginPath();
+                    ctx.arc(t.x, t.y, t.size * scale, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                this.rotation = Math.min(Math.PI / 8, Math.max(-Math.PI / 8, (this.velocity * 0.06)));
+                if (gameState === "START") this.rotation = 0;
+                ctx.rotate(this.rotation);
+
+                // Powerful Eagle Body (Brown feathers)
+                ctx.fillStyle = "#5c4033";
+                ctx.strokeStyle = "#2c3e50";
+                ctx.lineWidth = 1 * scale;
+                
+                // Detailed Body & Tail
+                ctx.beginPath();
+                ctx.moveTo(-15 * scale, 0);
+                ctx.quadraticCurveTo(-10 * scale, -10 * scale, 5 * scale, -10 * scale);
+                ctx.lineTo(20 * scale, -5 * scale); 
+                ctx.quadraticCurveTo(25 * scale, 0, 20 * scale, 5 * scale);
+                ctx.lineTo(5 * scale, 10 * scale);
+                ctx.quadraticCurveTo(-10 * scale, 10 * scale, -15 * scale, 0);
+                ctx.fill();
+                ctx.stroke();
+
+                // Detailed Wing Flap
+                ctx.fillStyle = "#4e3b31";
+                const flapState = Math.floor(frames / 12) % 3; // Slower flap animation
+                if (flapState === 0) { // Wings Up
+                    ctx.beginPath();
+                    ctx.moveTo(5 * scale, -8 * scale);
+                    ctx.quadraticCurveTo(15 * scale, -30 * scale, 35 * scale, -25 * scale);
+                    ctx.quadraticCurveTo(25 * scale, -10 * scale, 5 * scale, -8 * scale);
+                    ctx.fill();
+                } else if (flapState === 1) { // Wings Mid
+                    ctx.beginPath();
+                    ctx.moveTo(5 * scale, -5 * scale);
+                    ctx.quadraticCurveTo(20 * scale, -10 * scale, 35 * scale, -5 * scale);
+                    ctx.quadraticCurveTo(20 * scale, 10 * scale, 5 * scale, -5 * scale);
+                    ctx.fill();
+                } else { // Wings Down
+                    ctx.beginPath();
+                    ctx.moveTo(5 * scale, 5 * scale);
+                    ctx.quadraticCurveTo(15 * scale, 30 * scale, 35 * scale, 25 * scale);
+                    ctx.quadraticCurveTo(25 * scale, 10 * scale, 5 * scale, 5 * scale);
+                    ctx.fill();
+                }
+
+                // White Head & Neck
+                ctx.fillStyle = "#ffffff";
+                ctx.beginPath();
+                ctx.arc(16 * scale, -4 * scale, 6 * scale, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath(); 
+                ctx.moveTo(10 * scale, -4 * scale);
+                ctx.lineTo(16 * scale, -8 * scale);
+                ctx.lineTo(20 * scale, -4 * scale);
+                ctx.fill();
+                
+                // Fierce Eye
+                ctx.fillStyle = "#f1c40f";
+                ctx.beginPath(); ctx.arc(18 * scale, -6 * scale, 2.5 * scale, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = "#000";
+                ctx.beginPath(); ctx.arc(19 * scale, -6.5 * scale, 1.2 * scale, 0, Math.PI * 2); ctx.fill();
+
+                // Hooked Yellow Beak
+                ctx.fillStyle = "#f1c40f";
+                ctx.beginPath();
+                ctx.moveTo(20 * scale, -4 * scale);
+                ctx.lineTo(26 * scale, 0); 
+                ctx.lineTo(20 * scale, 4 * scale);
+                ctx.fill();
+                ctx.stroke();
+                
+                // Talons
+                ctx.fillStyle = "#f1c40f";
+                ctx.beginPath();
+                ctx.roundRect(-10 * scale, 5 * scale, 8 * scale, 8 * scale, 3 * scale);
+                ctx.fill();
+                ctx.stroke();
+                ctx.beginPath(); 
+                ctx.moveTo(-6 * scale, 13 * scale); ctx.lineTo(-8 * scale, 18 * scale);
+                ctx.moveTo(-2 * scale, 13 * scale); ctx.lineTo(-4 * scale, 18 * scale);
+                ctx.stroke();
+
+                ctx.restore();
+            },
+            
+            update: function() {
+                const r = this.radius * scale;
+                if (gameState === "START") {
+                    this.y = (canvas.height / 2) - (50 * scale) + Math.cos(frames / 20) * (12 * scale);
+                    return;
+                }
+
+                if (gameState === "PLAYING") {
+                    this.velocity += this.gravity * scale;
+                    this.y += this.velocity;
+
+                    // Clean white wind/feather trails
+                    if (frames % 4 === 0) { 
+                        trails.push({
+                            x: this.x - (10 * scale),
+                            y: this.y + (Math.random()*10*scale),
+                            size: Math.random() * 2 + 1,
+                            opacity: 0.5,
+                            color: 'rgba(255, 255, 255, 0.6)'
+                        });
+                    }
+
+                    if (this.y + r >= ground.y) {
+                        this.y = ground.y - r;
+                        triggerGameOver();
+                    }
+                    if (this.y - r <= 0) {
+                        this.y = r;
+                        this.velocity = 0;
+                    }
+                }
+
+                for (let i = 0; i < trails.length; i++) {
+                    trails[i].x -= currentSpeed * scale;
+                    trails[i].y -= Math.random() * 0.5 * scale;
+                    trails[i].size += 0.05;
+                    trails[i].opacity -= 0.02;
+                    if (trails[i].opacity <= 0) {
+                        trails.splice(i, 1);
+                        i--;
+                    }
+                }
+            },
+            
+            flap: function() {
+                this.velocity = -this.jumpForce * scale;
+            }
+        };
+
+        // CLEAN CITY PILLARS (Wider Horizontal & Vertical Gaps)
+        const pipes = {
+            array: [],
+            width: 0, 
+            gap: 0,   
+
+            draw: function() {
+                const w = this.width;
+                for (let i = 0; i < this.array.length; i++) {
+                    let p = this.array[i];
+                    
+                    // Sleek Modern Architecture Look
+                    let grad = ctx.createLinearGradient(p.x, 0, p.x + w, 0);
+                    grad.addColorStop(0, "#f8fafc");
+                    grad.addColorStop(0.5, "#cbd5e1");
+                    grad.addColorStop(1, "#94a3b8");
+                    
+                    ctx.fillStyle = grad;
+                    
+                    let topBodyHeight = p.topHeight * scale;
+                    // Top Pillar
+                    ctx.fillRect(p.x, 0, w, topBodyHeight);
+                    
+                    let bottomY = (p.topHeight * scale) + this.gap;
+                    let bottomBodyHeight = ground.y - bottomY;
+                    // Bottom Pillar
+                    ctx.fillRect(p.x, bottomY, w, bottomBodyHeight);
+
+                    // Glass Window Stripes on Pillars
+                    ctx.fillStyle = "rgba(52, 152, 219, 0.4)";
+                    ctx.fillRect(p.x + (15 * scale), 0, 20 * scale, topBodyHeight);
+                    ctx.fillRect(p.x + (15 * scale), bottomY, 20 * scale, bottomBodyHeight);
+                    
+                    ctx.fillStyle = "rgba(52, 152, 219, 0.2)";
+                    ctx.fillRect(p.x + (45 * scale), 0, 10 * scale, topBodyHeight);
+                    ctx.fillRect(p.x + (45 * scale), bottomY, 10 * scale, bottomBodyHeight);
+                }
+            },
+            
+            update: function() {
+                if (gameState !== "PLAYING") return;
+
+                // MATAGAL BAGO MAY SUSUNOD NA WALL (Wide Horizontal Gap)
+                let spawnRate = Math.max(220, 280 - (currentSpeed * 10));
+
+                if (frames % Math.floor(spawnRate / scale) === 0) {
+                    let minHeight = 80;
+                    let maxHeight = (ground.y / scale) - (this.gap / scale) - minHeight;
+                    let topHeight = Math.floor(Math.random() * (maxHeight - minHeight + 1) + minHeight);
+                    
+                    this.array.push({
+                        x: canvas.width,
+                        topHeight: topHeight, 
+                        passed: false
+                    });
+                }
+
+                for (let i = 0; i < this.array.length; i++) {
+                    let p = this.array[i];
+                    p.x -= currentSpeed * scale;
+
+                    const r = bird.radius * scale - (3 * scale); // Forgiving hitbox
+                    const bX = bird.x;
+                    const bY = bird.y;
+                    const pW = this.width;
+                    const pTH = p.topHeight * scale;
+                    const pBY = (p.topHeight * scale) + this.gap;
+
+                    if (bX + r > p.x && bX - r < p.x + pW) {
+                        if (bY - r < pTH || bY + r > pBY) {
+                            triggerGameOver();
+                        }
+                    }
+
+                    if (p.x + pW < bX && !p.passed) {
+                        score++;
+                        scoreDisplay.innerText = score; 
+                        
+                        // Add satisfying pulse animation to score
+                        scoreDisplay.classList.remove("pulse");
+                        void scoreDisplay.offsetWidth; // trigger reflow
+                        scoreDisplay.classList.add("pulse");
+
+                        if (score % 5 === 0) {
+                            currentSpeed += 0.2; // Gentle speed up
+                        }
+                        p.passed = true;
+                    }
+
+                    if (p.x + pW < -10 * scale) {
+                        this.array.shift();
+                        i--;
+                    }
+                }
+            }
+        };
+
+        // BACKGROUND: Clean Morning City Skyline
+        let buildings = [];
+        function initCity() {
+            buildings = [];
+            let bx = 0;
+            const loopW = 3000 * scale;
+            while (bx < loopW) {
+                let bw = (80 + Math.random() * 120) * scale;
+                let bh = (150 + Math.random() * 250) * scale;
+                // Bright, clean morning building colors
+                let colors = ["#f8fafc", "#e2e8f0", "#cbd5e1", "#f1f5f9"];
+                let c = colors[Math.floor(Math.random() * colors.length)];
+                buildings.push({
+                    x: bx, w: bw, h: bh, color: c
+                });
+                bx += bw;
+            }
+        }
+        
+        let cityScroll = 0;
+
+        function drawBackground() {
+            // Bright Morning Sky
+            let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, "#4facfe"); 
+            gradient.addColorStop(1, "#00f2fe"); 
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Morning Sun
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.beginPath();
+            const sunR = 80 * scale;
+            ctx.arc(canvas.width * 0.8, canvas.height * 0.3, sunR, 0, Math.PI * 2);
+            ctx.fill();
+
+            const groundY = ground.y;
+            buildings.forEach(b => {
+                let drawX = b.x - cityScroll;
+                if (drawX + b.w < -100 * scale) b.x += 3000 * scale; 
+                
+                // Intact, clean buildings
+                ctx.fillStyle = b.color;
+                ctx.fillRect(drawX, groundY - b.h, b.w, b.h);
+
+                // Clean windows
+                ctx.fillStyle = "#87ceeb";
+                if (b.h > 200 * scale) {
+                    ctx.fillRect(drawX + (15 * scale), groundY - b.h + (30 * scale), 10 * scale, 20 * scale);
+                    ctx.fillRect(drawX + (35 * scale), groundY - b.h + (30 * scale), 10 * scale, 20 * scale);
+                }
+            });
+
+            if (gameState === "PLAYING") {
+                cityScroll += (currentSpeed * 0.15 * scale); 
+            }
+        }
+
+        function startGame() {
+            gameState = "PLAYING";
+            startScreen.classList.add("hidden");
+            bird.flap();
+        }
+
+        function resetGame() {
+            currentSpeed = baseSpeed;
+            bird.y = canvas.height / 2;
+            bird.velocity = 0;
+            pipes.array = [];
+            traffic.array = []; 
+            trails.length = 0; 
+            score = 0;
+            frames = 0;
+            finalScoreEl.innerText = "0";
+            scoreDisplay.innerText = "0";
+            
+            gameOverScreen.classList.add("hidden");
+            gameState = "PLAYING";
+            bird.flap();
+        }
+
+        function triggerGameOver() {
+            if (gameState === "GAMEOVER") return; 
+            gameState = "GAMEOVER";
+            
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem("eagleMorningBest", bestScore);
+            }
+            
+            finalScoreEl.innerText = score;
+            bestScoreEl.innerText = bestScore;
+            gameOverScreen.classList.remove("hidden");
+        }
+
+        function handleInput(e) {
+            if (e.type === "keydown" && e.code === "Space") e.preventDefault();
+            
+            if (gameState === "PLAYING") {
+                bird.flap();
+            } else if (gameState === "START" && (e.type === "mousedown" || e.code === "Space" || e.type === "touchstart")) {
+                startGame();
+            } else if (gameState === "GAMEOVER" && (e.type === "mousedown" || e.code === "Space" || e.type === "touchstart")) {
+                if (!gameOverScreen.classList.contains("hidden")) {
+                    resetGame();
+                }
+            }
+        }
+
+        window.addEventListener("keydown", handleInput);
+        window.addEventListener("mousedown", handleInput);
+        window.addEventListener("touchstart", handleInput, {passive: false});
+
+        resize();
+        initCity();
+
+        function loop() {
+            drawBackground();
+            pipes.draw();
+            pipes.update();
+            ground.draw();
+            traffic.draw();   
+            traffic.update(); 
+            ground.update();
+            bird.draw();
+            bird.update();
+            frames++;
+            requestAnimationFrame(loop);
+        }
+
+        loop();
+    </script>
+</body>
+</html>
